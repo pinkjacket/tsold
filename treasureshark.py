@@ -1,27 +1,37 @@
 import tdl
 from random import randint
 
+# gameplay window stuff
 SCREEN_WIDTH = 80
 SCREEN_HEIGHT = 50
 
+# map size stuff
 MAP_WIDTH = 80
 MAP_HEIGHT = 45
 
+# room generation stuff
 ROOM_MAX_SIZE = 18
 ROOM_MIN_SIZE = 6
 MAX_ROOMS = 30
 
+# vision stuff
+FOV_ALGO = "BASIC"
+FOV_LIGHT_WALLS = True
+TORCH_RADIUS = 7
 
 LIMIT_FPS = 20
 
 color_dark_wall = (0, 0, 100)
+color_light_wall = (130, 110, 50)
 color_dark_ground = (50, 50, 150)
+color_light_ground = (200, 180, 50)
 
 
 class Tile:
     # map tile
     def __init__(self, blocked, block_sight = None):
         self.blocked = blocked
+        self.explored = False
 
         # blocked tiles block sight by default
         if block_sight is None: block_sight = blocked
@@ -60,7 +70,8 @@ class GameObject:
             self.y += dy
 
     def draw(self):
-        con.draw_char(self.x, self.y, self.char, self.color, bg=None)
+        if (self.x, self.y) in visible_tiles:
+            con.draw_char(self.x, self.y, self.char, self.color, bg=None)
 
     def clear(self):
         con.draw_char(self.x, self.y, " ", self.color, bg=None)
@@ -132,6 +143,20 @@ def create_v_tunnel(y1, y2, x):
         my_map[x][y].block_sight = False
 
 
+def is_visible_tile(x, y):
+    global my_map
+    if x >= MAP_WIDTH or x < 0:
+        return False
+    elif y >= MAP_HEIGHT or y < 0:
+        return False
+    elif my_map[x][y].blocked == True:
+        return False
+    elif my_map[x][y].block_sight == True:
+        return False
+    else:
+        return True
+
+
 def create_room(room):
     global my_map
     # make the tiles in a rectangle passable
@@ -142,14 +167,35 @@ def create_room(room):
 
 
 def render_all():
+    global fov_recompute
+    global visible_tiles
 
+    if fov_recompute:
+        fov_recompute = False
+        visible_tiles = tdl.map.quickFOV(player.x, player.y,
+                                         is_visible_tile,
+                                         fov=FOV_ALGO,
+                                         radius=TORCH_RADIUS,
+                                         lightWalls=FOV_LIGHT_WALLS)
+
+    # set tile backgrounds by FOV
     for y in range(MAP_HEIGHT):
         for x in range(MAP_WIDTH):
+            visible = (x, y) in visible_tiles
             wall = my_map[x][y].block_sight
-            if wall:
-                con.draw_char(x, y, None, fg=None, bg=color_dark_wall)
+            if not visible:
+                if my_map[x][y].explored:
+                    if wall:
+                        con.draw_char(x, y, None, fg=None, bg=color_dark_wall)
+                    else:
+                        con.draw_char(x, y, None, fg=None, bg=color_dark_ground)
             else:
-                con.draw_char(x, y, None, fg=None, bg=color_dark_ground)
+                if wall:
+                    con.draw_char(x, y, None, fg=None, bg=color_light_wall)
+                else:
+                    con.draw_char(x, y, None, fg=None, bg=color_light_ground)
+                # explore since it's visible
+                my_map[x][y].explored = True
 
     for obj in objects:
         obj.draw()
@@ -159,6 +205,7 @@ def render_all():
 
 def handle_keys():
     global playerx, playery
+    global fov_recompute
 
     user_input = tdl.event.key_wait()
 
@@ -172,15 +219,19 @@ def handle_keys():
     # movement keys
     if user_input.key == "UP":
         player.move(0, -1)
+        fov_recompute = True
 
     elif user_input.key == "DOWN":
         player.move (0, 1)
+        fov_recompute = True
 
     elif user_input.key == "LEFT":
         player.move(-1, 0)
+        fov_recompute = True
 
     elif user_input.key == "RIGHT":
         player.move(1, 0)
+        fov_recompute = True
 
 
 tdl.set_font("arial10x10.png", greyscale=True, altLayout=True)
@@ -191,6 +242,8 @@ player = GameObject(SCREEN_WIDTH//2, SCREEN_HEIGHT//2, "@", (255, 255, 255))
 npc = GameObject(SCREEN_WIDTH//2 - 5, SCREEN_HEIGHT//2, "@", (255, 255, 0))
 objects = [npc, player]
 make_map()
+
+fov_recompute = True
 
 while not tdl.event.is_window_closed():
     render_all()
