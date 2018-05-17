@@ -11,6 +11,7 @@ ROOM_MAX_SIZE = 18
 ROOM_MIN_SIZE = 6
 MAX_ROOMS = 30
 
+
 LIMIT_FPS = 20
 
 color_dark_wall = (0, 0, 100)
@@ -128,7 +129,7 @@ def create_v_tunnel(y1, y2, x):
     global my_map
     for y in range(min(y1, y2), max(y1, y2) + 1):
         my_map[x][y].blocked = False
-        my_map[x][y].blocked = False
+        my_map[x][y].block_sight = False
 
 
 def create_room(room):
