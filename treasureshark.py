@@ -1,6 +1,7 @@
 import tdl
 from random import randint
 import colors
+import math
 
 # gameplay window stuff
 SCREEN_WIDTH = 80
@@ -61,18 +62,43 @@ class Rect:
 
 
 class GameObject:
-    def __init__(self, x, y, char, name, color, blocks=False):
+    def __init__(self, x, y, char, name, color, blocks=False, fighter=None, ai=None):
         self.x = x
         self.y = y
         self.char = char
         self.name = name
         self.color = color
         self.blocks = blocks
+        self.fighter = fighter
+        if self.fighter:  # let fighter component know its owner
+            self.fighter.owner = self
+
+        self.ai = ai
+        if self.ai:  # let AI component know its owner
+            self.ai.owner = self
 
     def move(self, dx, dy):
         if not is_blocked(self.x + dx, self.y + dy):
             self.x += dx
             self.y += dy
+
+    def move_towards(self, target_x, target_y):
+        # vector from object to the target, and distance
+        dx = target_x - self.x
+        dy = target_y - self.y
+        distance = math.sqrt(dx ** 2 + dy ** 2)
+
+        # normalize to length 1 (keeping direction), then round and
+        # convert to integer so the movement is restricted to the map grid
+        dx = int(round(dx/distance))
+        dy = int(round(dy/distance))
+        self.move(dx, dy)
+
+    def distance_to(self, other):
+        # return the distance to another object
+        dx = other.x - self.x
+        dy = other.y - self.y
+        return math.sqrt(dx ** 2 + dy ** 2)
 
     def draw(self):
         if (self.x, self.y) in visible_tiles:
@@ -80,6 +106,31 @@ class GameObject:
 
     def clear(self):
         con.draw_char(self.x, self.y, " ", self.color, bg=None)
+
+
+class Fighter:
+    # can engage in combat
+    def __init__(self, hp, defense, power):
+        self.max_hp = hp
+        self.hp = hp
+        self.defense = defense
+        self.power = power
+
+
+class BasicEnemy:
+    # basic enemy AI
+    def take_turn(self):
+        # basic monster turn. if it can see you, it chases you
+        monster = self.owner
+        if (monster.x, monster.y) in visible_tiles:
+
+            # move towards player if far away
+            if monster.distance_to(player) >= 2:
+                monster.move_towards(player.x, player.y)
+
+            # attack if close enough
+            elif player.fighter.hp > 0:
+                print("You manage to evade the " + monster.name + "'s attack!")
 
 
 def make_map():
@@ -201,14 +252,26 @@ def place_objects(room):
             # enemy odds
             choice = randint(0,100)
             if choice < 60:
-                # rusted automaton
-                monster = GameObject(x, y, "r", "rusted automaton", colors.darker_orange, blocks=True)
+                # withered husk
+                fighter_component = Fighter(hp=10, defense=0,power=3)
+                ai_component = BasicEnemy()
+
+                monster = GameObject(x, y, "h", "withered husk", colors.light_gray, blocks=True,
+                                     fighter=fighter_component, ai=ai_component)
             elif choice < 60 + 30:
-                # shrouded husk
-                monster = GameObject(x, y, "h", "shrouded husk", colors.light_gray, blocks=True)
+                # rusted automaton
+                fighter_component = Fighter(hp=16, defense=1, power=4)
+                ai_component = BasicEnemy()
+
+                monster = GameObject(x, y, "a", "rusted automaton", colors.darker_orange, blocks=True,
+                                     fighter=fighter_component, ai=ai_component)
             else:
                 # kobold bandit
-                monster = GameObject(x, y, "k", "kobold bandit", colors.darker_flame, blocks=True)
+                fighter_component = Fighter(hp=20, defense=0, power=5)
+                ai_component = BasicEnemy()
+
+                monster = GameObject(x, y, "k", "kobold bandit", colors.darker_flame, blocks=True,
+                                     fighter=fighter_component, ai=ai_component)
 
             objects.append(monster)
 
@@ -307,7 +370,9 @@ tdl.set_font("arial10x10.png", greyscale=True, altLayout=True)
 root = tdl.init(SCREEN_WIDTH, SCREEN_HEIGHT, title="Treasure Shark", fullscreen=False)
 con = tdl.Console(SCREEN_WIDTH, SCREEN_HEIGHT)
 
-player = GameObject(0, 0, "@", "player", colors.white, blocks=True)
+# create the player
+fighter_component = Fighter(hp=30, defense=2, power=5)
+player = GameObject(0, 0, "@", "player", colors.white, blocks=True, fighter=fighter_component)
 objects = [player]
 make_map()
 
@@ -329,5 +394,5 @@ while not tdl.event.is_window_closed():
     # Let enemies go
     if game_state == "playing" and player_action != "didnt-take-turn":
         for obj in objects:
-            if obj != player:
-                print("The " + obj.name + " notices you!")
+            if obj.ai:
+                obj.ai.take_turn()
