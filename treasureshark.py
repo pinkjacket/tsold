@@ -53,7 +53,7 @@ class Rect:
     def center(self):
         center_x = (self.x1 + self.x2) // 2
         center_y = (self.y1 + self.y2) // 2
-        return(center_x, center_y)
+        return center_x, center_y
 
     def intersect(self, other):
         # true if rooms overlap
@@ -104,17 +104,44 @@ class GameObject:
         if (self.x, self.y) in visible_tiles:
             con.draw_char(self.x, self.y, self.char, self.color, bg=None)
 
+    def send_to_back(self):
+        # draw this object first so others are shown over it
+        global objects
+        objects.remove(self)
+        objects.insert(0, self)
+
     def clear(self):
         con.draw_char(self.x, self.y, " ", self.color, bg=None)
 
 
 class Fighter:
     # can engage in combat
-    def __init__(self, hp, defense, power):
+    def __init__(self, hp, defense, power, death_function=None):
         self.max_hp = hp
         self.hp = hp
         self.defense = defense
         self.power = power
+        self.death_function = death_function
+
+    def take_damage(self, damage):
+        if damage > 0:
+            self.hp -= damage
+
+            # check for death
+            if self.hp <= 0:
+                function = self.death_function
+                if function is not None:
+                    function(self.owner)
+
+    def attack(self, target):
+        damage = self.power - target.fighter.defense
+
+        if damage > 0:
+            # target takes damage
+            print(self.owner.name.capitalize() + " attacks " + target.name + " for " + str(damage) + " damage!")
+            target.fighter.take_damage(damage)
+        else:
+            print(self.owner.name.capitalize() + " attacks " + target.name + ", to no effect!")
 
 
 class BasicEnemy:
@@ -130,7 +157,7 @@ class BasicEnemy:
 
             # attack if close enough
             elif player.fighter.hp > 0:
-                print("You manage to evade the " + monster.name + "'s attack!")
+                monster.fighter.attack(player)
 
 
 def make_map():
@@ -253,21 +280,21 @@ def place_objects(room):
             choice = randint(0,100)
             if choice < 60:
                 # withered husk
-                fighter_component = Fighter(hp=10, defense=0,power=3)
+                fighter_component = Fighter(hp=10, defense=0,power=3, death_function=monster_death)
                 ai_component = BasicEnemy()
 
-                monster = GameObject(x, y, "h", "withered husk", colors.light_gray, blocks=True,
+                monster = GameObject(x, y, "h", "withered husk", colors.dark_gray, blocks=True,
                                      fighter=fighter_component, ai=ai_component)
             elif choice < 60 + 30:
                 # rusted automaton
-                fighter_component = Fighter(hp=16, defense=1, power=4)
+                fighter_component = Fighter(hp=16, defense=1, power=4, death_function=monster_death)
                 ai_component = BasicEnemy()
 
                 monster = GameObject(x, y, "a", "rusted automaton", colors.darker_orange, blocks=True,
                                      fighter=fighter_component, ai=ai_component)
             else:
                 # kobold bandit
-                fighter_component = Fighter(hp=20, defense=0, power=5)
+                fighter_component = Fighter(hp=20, defense=0, power=5, death_function=monster_death)
                 ai_component = BasicEnemy()
 
                 monster = GameObject(x, y, "k", "kobold bandit", colors.darker_flame, blocks=True,
@@ -308,9 +335,15 @@ def render_all():
                 my_map[x][y].explored = True
 
     for obj in objects:
-        obj.draw()
+        if obj != player:
+            obj.draw()
+    player.draw()
 
+    # blit the contents of "con" to the root console and present it
     root.blit(con, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0)
+
+    # show player's stats
+    con.draw_str(1, SCREEN_HEIGHT - 2, "HP: " + str(player.fighter.hp) + "/" + str(player.fighter.max_hp) + " ")
 
 
 def player_move_or_attack(dx, dy):
@@ -323,16 +356,38 @@ def player_move_or_attack(dx, dy):
     # look for attackable object
     target = None
     for obj in objects:
-        if obj.x == x and obj.y == y:
+        if obj.fighter and obj.x == x and obj.y == y:
             target = obj
             break
 
     # attack if target found, otherwise move
     if target is not None:
-        print("The " + target.name + " shrugs off your attack!")
+        player.fighter.attack(target)
     else:
         player.move(dx, dy)
         fov_recompute = True
+
+
+def player_death(player):
+    # game over!
+    global game_state
+    print("It is a sad thing that your adventures have ended here!")
+    game_state = "dead"
+
+    # player becomes corpse
+    player.char = "%"
+    player.color = colors.darkest_red
+
+
+def monster_death(monster):
+    print(monster.name.capitalize() + " falls!")
+    monster.char = "%"
+    monster.color = colors.darkest_red
+    monster.blocks = False
+    monster.fighter = None
+    monster.ai = None
+    monster.name = "remains of " + monster.name
+    monster.send_to_back()
 
 
 def handle_keys():
@@ -371,8 +426,8 @@ root = tdl.init(SCREEN_WIDTH, SCREEN_HEIGHT, title="Treasure Shark", fullscreen=
 con = tdl.Console(SCREEN_WIDTH, SCREEN_HEIGHT)
 
 # create the player
-fighter_component = Fighter(hp=30, defense=2, power=5)
-player = GameObject(0, 0, "@", "player", colors.white, blocks=True, fighter=fighter_component)
+fighter_component = Fighter(hp=40, defense=2, power=5, death_function=player_death)
+player = GameObject(0, 0, "@", "Shark", colors.white, blocks=True, fighter=fighter_component)
 objects = [player]
 make_map()
 
